@@ -1,5 +1,7 @@
 # avr-thermostat-cpp
 
+[![CI](https://github.com/HCDani/avr-thermostat-cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/HCDani/avr-thermostat-cpp/actions/workflows/ci.yml)
+
 A closed-loop thermostat for an ATmega328P (Arduino Uno), written in C++14
 directly against the registers with no framework underneath. A thermistor is
 sampled through the ADC, the reading drives a hysteresis controller, and the
@@ -81,9 +83,20 @@ python tools/gen_thermistor_table.py
 The script prints reference values that the host tests assert against, so the
 table and the tests cannot drift apart silently.
 
+## Continuous integration
+
+Every push and pull request runs two jobs:
+
+- the host test suites, and
+- a check that regenerating the lookup table produces no diff, so the table
+  cannot be edited by hand and drift away from the script that owns it.
+
+Building for the target and running the suite on the board join this once the
+drivers exist.
+
 ## Status
 
 Control logic and conversion are done and covered by 19 host tests. Still to
 come: the AVR drivers (interrupt-driven ADC, timers, EEPROM, USART), a
-bare-metal TWI driver for the LCD, on-target tests through a PlatformIO remote
-agent, and CI.
+bare-metal TWI driver for the LCD, and on-target tests through a PlatformIO
+remote agent.
