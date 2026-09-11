@@ -1,0 +1,68 @@
+#pragma once
+
+#include <stdint.h>
+
+#include "heater/IHeater.h"
+#include "temp/ITemperature.h"
+#include "thermostat/Types.h"
+#include "timer/ITimer.h"
+
+namespace control {
+
+struct SetpointLimits {
+    thermostat::DeciCelsius minimum;
+    thermostat::DeciCelsius maximum;
+};
+
+struct Config {
+    thermostat::DeciCelsius setpoint;
+    thermostat::DeciCelsius hysteresis;
+    SetpointLimits limits;
+    // Consecutive out-of-range samples tolerated before the heater is cut.
+    // One bad reading is noise; several in a row is a broken sensor.
+    uint8_t faultSampleLimit;
+};
+
+// Closed-loop thermostat: sample the thermistor, decide, drive the relay.
+//
+// Application level, so it sees only the driver interfaces and never a pin, a
+// register or a concrete driver. That is what lets the host tests run this
+// exact logic against the mocks.
+//
+// The work is split across the two contexts the specification demands:
+// onTick() runs in interrupt context and only starts a conversion, while
+// service() runs in the main loop and does the arithmetic and the switching.
+class Controller : public timer::ITimerListener {
+public:
+    enum class State : uint8_t { Idle, Heating, Fault };
+
+    Controller(heater::IHeater& relay, temp::ITemperature& sensor, const Config& config);
+
+    // timer::ITimerListener. Interrupt context: start one conversion, return.
+    void onTick() override;
+
+    // Main loop. Converts a latched sample when ITemperature::available()
+    // reports one, then acts on it. Extra ticks without a completed
+    // conversion do nothing; extra completed samples without a service()
+    // coalesce into one decision.
+    void service();
+
+    State state() const;
+    thermostat::DeciCelsius temperature() const;
+    thermostat::DeciCelsius setpoint() const;
+
+    void setSetpoint(thermostat::DeciCelsius value);
+
+private:
+    void decide(temp::Reading reading);
+    void clampSetpoint();
+
+    heater::IHeater& relay_;
+    temp::ITemperature& sensor_;
+    Config config_;
+    thermostat::DeciCelsius temperature_;
+    State state_;
+    uint8_t badSamples_;
+};
+
+}  // namespace control

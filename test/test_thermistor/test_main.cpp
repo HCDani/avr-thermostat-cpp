@@ -1,5 +1,9 @@
 #include <unity.h>
 
+#ifdef __AVR__
+#include "usart/usart_c.h"
+#endif
+
 #include "thermostat/Thermistor.h"
 
 using thermostat::AdcCount;
