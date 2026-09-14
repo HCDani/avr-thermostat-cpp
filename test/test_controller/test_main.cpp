@@ -4,17 +4,17 @@
 #include "usart/usart_c.h"
 #endif
 
-#include "control/Controller.h"
-#include "heater/mock_heater.h"
-#include "temp/mock_temp.h"
-#include "timer/mock_timer.h"
+#include "Controller.h"
+#include "mock_heater.h"
+#include "mock_temp.h"
+#include "mock_timer.h"
 
-using control::Config;
-using control::Controller;
-using control::SetpointLimits;
+using controller::Config;
+using controller::Controller;
+using controller::SetpointLimits;
 using heater::MockHeater;
 using temp::MockTemperature;
-using thermostat::DeciCelsius;
+using temp::DeciCelsius;
 using timer::MockTimer;
 
 using State = Controller::State;

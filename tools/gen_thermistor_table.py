@@ -38,8 +38,8 @@ ENTRY_COUNT = ADC_MAX // STEP + 2   # +1 for index 0, +1 so interpolation can re
 VALID_MIN_DECI = -400
 VALID_MAX_DECI = 1250
 
-HEADER_PATH = os.path.join("lib", "thermostat", "include", "thermostat", "ThermistorTable.h")
-SOURCE_PATH = os.path.join("lib", "thermostat", "src", "ThermistorTable.cpp")
+HEADER_PATH = os.path.join("lib", "temp", "ThermistorTable.h")
+SOURCE_PATH = os.path.join("lib", "temp", "ThermistorTable.cpp")
 
 
 def deci_celsius(adc):
@@ -92,7 +92,7 @@ def write_header(table, valid_lo, valid_hi):
 
 #include <stdint.h>
 
-namespace thermostat {{
+namespace temp {{
 namespace table {{
 
 constexpr uint16_t kStep = {step};
@@ -107,7 +107,7 @@ constexpr uint16_t kMaxValidCount = {valid_hi};
 int16_t entry(uint16_t index);
 
 }}  // namespace table
-}}  // namespace thermostat
+}}  // namespace temp
 """.format(step=STEP, count=len(table), valid_lo=valid_lo, valid_hi=valid_hi)
     os.makedirs(os.path.dirname(HEADER_PATH), exist_ok=True)
     with open(HEADER_PATH, "w", newline="\n") as handle:
@@ -120,15 +120,15 @@ def write_source(table):
         chunk = table[chunk_start:chunk_start + 8]
         lines.append("    " + ", ".join("{:6d}".format(v) for v in chunk) + ",")
     banner = BANNER.format(b=B_VALUE, r0=R0_OHMS, t0=T0_KELVIN, step=STEP, count=len(table))
-    body = """#include "thermostat/ThermistorTable.h"
+    body = """#include "ThermistorTable.h"
 
-#include "thermostat/Progmem.h"
+#include "Progmem.h"
 
-namespace thermostat {{
+namespace temp {{
 namespace table {{
 namespace {{
 
-const int16_t kDeciCelsius[kEntryCount] THERMOSTAT_PROGMEM = {{
+const int16_t kDeciCelsius[kEntryCount] TEMP_PROGMEM = {{
 {rows}
 }};
 
@@ -142,7 +142,7 @@ int16_t entry(uint16_t index) {{
 }}
 
 }}  // namespace table
-}}  // namespace thermostat
+}}  // namespace temp
 """.format(rows="\n".join(lines))
     os.makedirs(os.path.dirname(SOURCE_PATH), exist_ok=True)
     with open(SOURCE_PATH, "w", newline="\n") as handle:

@@ -12,14 +12,14 @@
 #include <avr/interrupt.h>
 #include <stdint.h>
 
-#include "hal/Adc.h"
-#include "temp/temp_hw.h"
-#include "timer/timer_hw.h"
+#include "Adc.h"
+#include "temp_hw.h"
+#include "timer_hw.h"
 
 namespace {
 
 // The thermistor divider sits on A0, port 1 of the Grove base shield.
-const hal::PinId kThermistorPin = 0;
+const uint8_t kThermistorPin = 0;
 
 volatile int16_t g_latestDeciCelsius = 0;
 volatile bool g_sensorFaulted = false;
@@ -37,7 +37,7 @@ private:
 }  // namespace
 
 int main() {
-    hal::Adc adc;
+    adc::Adc adc;
     temp::TemperatureHw sensor(adc, kThermistorPin);
     timer::TimerHw clock;
 
