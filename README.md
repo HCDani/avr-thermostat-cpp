@@ -7,24 +7,23 @@ directly against the registers with no framework underneath. A thermistor is
 sampled through the ADC, the reading drives a hysteresis controller, and the
 controller switches a relay.
 
-Hardware is a Grove Starter Kit v3: thermistor on an analog input, relay as the
-heater output, rotary angle sensor for the setpoint, button to commit it, RGB
-LCD for display and a buzzer for faults.
+Hardware is a Grove Starter Kit v3: NTC on A0, relay as the heater output,
+encoder for the setpoint, buttons, RGB LCD, and a servo in the longer-term
+spec. `Documentation/avr_thermostat.md` is that goal, not a description of
+what already runs.
 
 ## Why C++ on a part with 2 KB of SRAM
 
 Not for the language's sake. Each of these earns its place:
 
 - **Every driver is an abstract interface, and the test mocks implement the
-  same interface.** `Controller` holds an `ITemperature&`, an `IHeater&` and
-  nothing else, so the identical control logic runs against registers on the
-  target and against mocks on the host with no `#ifdef` in it. This is what
-  `Documentation/avr_thermostat.md` specifies, and it costs a vtable per
+  same interface.** `Controller` holds an `ITemperature&` and an `IHeater&`,
+  so the identical control logic runs against registers on the target and
+  against mocks on the host with no `#ifdef` in it. That costs a vtable per
   interface plus the `operator delete` stub in `src/cxx_runtime.cpp` that a
   virtual destructor drags in on a part with no C++ runtime.
-- **`AdcCount` and `DeciCelsius` are distinct types.** A raw count cannot be
-  compared against a setpoint by accident. That is a whole class of bug the
-  compiler now rejects.
+- **`DeciCelsius` is a distinct type.** A raw ADC count cannot be compared
+  against a setpoint by accident.
 - **Temperatures are fixed point in tenths of a degree.** The 328P has no
   floating point unit, and 0.1 °C is already finer than the sensor's 1.5 °C
   accuracy.
@@ -42,49 +41,49 @@ accept.
 ## Failing safe
 
 The thermistor sits in a divider, so both ADC rails are electrically
-meaningless: 0 claims infinite resistance, 1023 claims zero. Counts outside the
-window where the sensor is specified (-40 to 125 C) are treated as a broken
-sensor rather than as a temperature. A single bad sample is tolerated as noise;
-several consecutive ones cut the heater and latch a fault. A setpoint restored
-from a blank or corrupted EEPROM is clamped into range before it is ever acted
-on.
+meaningless: 0 claims infinite resistance, 1023 claims zero. Counts outside
+24..992 (the window where the sensor is specified, −40 to 125 °C) are a
+broken sensor rather than a temperature: open lead vs short. A single bad
+sample is tolerated as noise; several consecutive ones cut the heater and
+latch a fault. A setpoint restored from a blank or corrupted EEPROM is
+clamped into range before it is ever acted on.
 
-All of that is exercised by the host suite, not by holding a lighter near the
-sensor.
+`temp::convert()` is the one place that mapping happens. Host tests exercise
+it; the ISRs never do.
 
 ## Layout
 
-Headers are contracts and `.cpp` files are implementations. One driver per
-library, each with its interface, its hardware implementation and its mock.
+Headers are contracts and `.cpp` files are implementations. Libraries are
+flat: PlatformIO's include root is the library folder, so sources include
+`"Adc.h"`, not `"hal/Adc.h"`. One driver per library, each with its
+interface, its hardware implementation and its mock.
 
 ```
-lib/thermostat/       value types and the conversion table; no AVR headers
-    Types.h             AdcCount, DeciCelsius
-    Thermistor.h        ADC count -> temperature, table interpolation
-    ThermistorTable.h   generated
-    Progmem.h           flash access on AVR, plain reads on the host
-lib/hal/              hal/Adc.h                 AVR-free contract
-                      src/Adc.cpp               ADC registers, ISR(ADC_vect)
-lib/temp/             temp/ITemperature.h       driver interface
-                      temp/temp_hw.h .cpp       NTC through the ADC, latch only
-                      temp/mock_temp.h .cpp     test mock
-                      temp/Conversion.h .cpp    count -> Reading, shared
-lib/timer/            timer/ITimer.h            1 Hz system tick interface
-                      timer/timer_hw.h .cpp     Timer 0, CTC, /1024, divide 125
-                      timer/mock_timer.h .cpp   test mock, ticks on demand
-lib/heater/           heater/IHeater.h          relay interface
-                      heater/mock_heater.h .cpp test mock
-lib/usart/            usart/IUsart.h            polled TX interface
-                      usart/usart_hw.h .cpp     USART0, 115200 8N1
-                      usart/mock_usart.h .cpp   test mock
-lib/control/          control/Controller.h .cpp hysteresis state machine
-src/                  main.cpp, cxx_runtime.cpp target entry point
-test/                 host suites, Unity
-tools/                table generator
+lib/adc/          Adc.h .cpp              interrupt-driven ADC, AVR-free header
+lib/temp/         ITemperature.h          driver interface
+                  temp_hw.h .cpp          NTC through the ADC: latch + available()
+                  mock_temp.h .cpp        test mock
+                  Conversion.h .cpp       count -> Reading (status + DeciCelsius)
+                  DeciCelsius.h           tenths of a degree
+                  ThermistorTable.h .cpp  generated lookup
+                  Progmem.h               flash access on AVR, subscript on host
+lib/timer/        ITimer.h                1 Hz system tick
+                  timer_hw.h .cpp         Timer 0, CTC, /1024, divide by 125
+                  mock_timer.h .cpp       ticks on demand
+lib/heater/       IHeater.h               relay interface
+                  mock_heater.h .cpp      test mock (no GPIO driver yet)
+lib/usart/        IUsart.h                polled TX
+                  usart_hw.h .cpp         USART0, 115200 8N1
+                  usart_c.h               C API for Unity
+                  mock_usart.h .cpp       test mock
+lib/controller/   Controller.h .cpp       hysteresis; onTick vs service
+src/              main.cpp, cxx_runtime.cpp
+test/             Unity host suites; unity_config.h for the Uno
+tools/            table generator
 ```
 
-`Types.h` and `Progmem.h` keep their bodies in the header because `constexpr`
-and `inline` require the definition to be visible at the point of use.
+`DeciCelsius.h` and `Progmem.h` keep their bodies in the header because
+`constexpr` and `inline` require the definition at the point of use.
 Everything else is declared in a header and defined in a `.cpp`.
 
 ## Building and testing
@@ -109,6 +108,8 @@ On-target Unity, uploaded over COM9, reports through USART0 at 115200:
 pio test -e uno
 ```
 
+That command flashes the board.
+
 Regenerating the lookup table, after changing the thermistor parameters:
 
 ```
@@ -116,7 +117,8 @@ python tools/gen_thermistor_table.py
 ```
 
 The script prints reference values that the host tests assert against, so the
-table and the tests cannot drift apart silently.
+table and the tests cannot drift apart silently. `ThermistorTable.h` and
+`ThermistorTable.cpp` are generated; do not edit them by hand.
 
 ## Continuous integration
 
@@ -126,30 +128,27 @@ Every push and pull request runs two jobs:
 - a check that regenerating the lookup table produces no diff, so the table
   cannot be edited by hand and drift away from the script that owns it.
 
-Neither job builds the firmware yet, so `pio run -e uno` and `pio test -e uno`
-are local checks. The latter flashes the board.
+Neither job builds the firmware, so `pio run -e uno` and `pio test -e uno`
+are local checks.
 
 ## Status
 
 `Documentation/avr_thermostat.md` is the target; this is how far it has got.
 
-Done and covered by 28 host tests: the value types, the thermistor conversion,
-the hysteresis controller, and the temperature, timer, heater and USART driver
-interfaces with their mocks. Compiling for the target works, and the
-interrupt-driven ADC, the 1 Hz Timer 0 tick and USART0 are written and link.
+Done and covered by 27 host tests: conversion (`convert()` plus the generated
+table), the hysteresis controller, and the temperature, timer, heater and
+USART interfaces with their mocks. The interrupt-driven ADC, the 1 Hz Timer 0
+tick and USART0 are written. Firmware links.
 
-Timers are allocated for the whole design, not just for what exists. Timer 1
-is reserved for the servo, being the only 16-bit counter; Timer 2 is left free
-because its `OC2A` output is the servo pin; the tick gets Timer 0 and divides
-down to 1 Hz in software, exactly, because 16 MHz / 1024 is 5⁶.
+Timers are allocated for the whole design. Timer 1 is reserved for the servo
+(the only 16-bit counter). Timer 2 stays free because its `OC2A` output is
+the servo pin. The tick is Timer 0 in CTC, divided by 125 in software.
 
-Neither interrupt does arithmetic. The tick starts a conversion, the ADC
-completion interrupt latches the raw count and sets `available()`, and the table interpolation
-happens when the main loop reads it. `Controller` is split the same way:
-`onTick()` for interrupt context, `service()` for the loop.
+Neither interrupt does arithmetic. The tick starts a conversion; the ADC
+completion interrupt latches the count and sets `available()`; interpolation
+runs in the main loop via `ITemperature::get()`. `Controller` is split the
+same way: `onTick()` in interrupt context, `service()` in the loop.
 
 Still to come: a hardware `IHeater`, which is why `src/main.cpp` reads the
 sensor instead of constructing a `Controller`; the LCD, button, encoder and
 servo drivers; and EEPROM for the setpoint.
-
-On-target Unity talks through USART0. Flash the board only when asked.
