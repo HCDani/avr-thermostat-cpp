@@ -8,11 +8,12 @@ exists. It is the authority on architecture; where it and this file disagree,
 say so rather than picking one silently.
 
 One library per driver, each holding an interface, a hardware implementation
-and a mock: `lib/hal` (ADC), `lib/temp`, `lib/timer`, `lib/heater`, `lib/usart`.
-The application is `lib/control`. `lib/thermostat` is now only the value types
-and the generated conversion table. Only `lib/hal/src`,
-`lib/temp/src/temp_hw.cpp`, `lib/timer/src/timer_hw.cpp`,
-`lib/usart/src/usart_hw.cpp` and `src/` touch AVR headers.
+and a mock: `lib/adc`, `lib/temp`, `lib/timer`, `lib/heater`, `lib/usart`,
+`lib/twi`, `lib/lcd`, `lib/led`, `lib/key`. The thermostat application is
+`lib/controller`; the Part 1 demo is `lib/logic`. Only `lib/adc/Adc.cpp`,
+`lib/temp/temp_hw.cpp`, `lib/timer/timer_hw.cpp`, `lib/usart/usart_hw.cpp`,
+`lib/twi/Twi.cpp`, `lib/lcd/lcd_hw.cpp`, `lib/key/key_hw.cpp` and `src/`
+touch AVR headers.
 
 ## Commands
 
@@ -48,14 +49,14 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
   through USART0 at 115200 8N1 and reports over that same port. Never report
   on-target results that did not happen, and never flash the board without
   being asked.
-- **Timer allocation is fixed.** Timer 1 is reserved for the servo, being the
-  only 16-bit counter. Timer 2 stays free because its `OC2A` output is D11,
-  the servo signal pin; Timer 1's own outputs, D9 and D10, are taken by the
-  encoder, so the servo pulse has to be toggled from a Timer 1 ISR rather
-  than by hardware PWM. The 1 Hz tick is Timer 0 in CTC with a software
-  divide by 125: 16 MHz / 1024 = 15625 = 5^6, so 125 divides it exactly and
-  the tick does not drift. A `static_assert` fails the build if a clock or
-  prescaler change ever makes that division inexact.
+- **Timer allocation is fixed.** Timer 1 is the servo: it is the only 16-bit
+  counter, and SIG is D9 (`OC1A`), so the pulse is hardware PWM, not an ISR
+  toggle. The encoder is on D6/D7; its switch is D12 on the Arduino header.
+  Timer 2 stays unused (`OC2A` is D11, not on the Grove shield; `OC2B` is D3,
+  key 2). The 1 Hz tick is Timer 0 in CTC with a software divide by 125:
+  16 MHz / 1024 = 15625 = 5^6, so 125 divides it exactly and the tick does
+  not drift. A `static_assert` fails the build if a clock or prescaler
+  change ever makes that division inexact.
 - **`ADTS` has no 1 Hz source**, so the ADC cannot be triggered by hardware
   from the tick: Timer 0 offers only compare match A at 125 Hz and Timer 2 is
   not a trigger source at all. The tick starts each conversion in software.
@@ -64,6 +65,22 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
   scanning and so finds no includes at all in the guarded files.
 - The Grove Temperature Sensor is an NCP18WF104F03RC with R0 = 100k and
   B = 4275, confirmed by the documentation. The generated table matches.
+- **The Base Shield 2.0 has no I2C pull-ups**; it only wires the four I2C
+  connectors to A4/A5. Arduino sketches work because `Wire`'s `twi_init()`
+  silently enables the AVR's internal pull-ups, so `Twi::init()` does the same
+  explicitly. Without them SDA/SCL never rise and the hardware cannot even
+  finish a START, which reads as `TWSR` never setting `TWINT`. Those pull-ups
+  are 20-50k against the 4.7-10k I2C wants, so the bus is stiff enough only
+  on short cables; external resistors would be better.
+- **The LCD controller NACKs while it is busy.** A string must go out as one
+  transfer (control byte then all data bytes), and each transfer needs about
+  40 us afterwards, or every byte after the first is dropped.
+- **The LCD ignores the AiP31068 contrast registers.** Measured on the board
+  across the whole 0..63 range: no effect, because the module fixes the LCD
+  bias in hardware, which is why Seeed's own library never sets them. Do not
+  re-add a contrast sequence. Backlight PWM is the only readability lever, and
+  full brightness washes the characters out; `kBacklightLevel` is 64. The panel
+  keeps a narrow viewing cone regardless.
 
 ## Rules
 

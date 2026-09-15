@@ -76,7 +76,18 @@ lib/usart/        IUsart.h                polled TX
                   usart_hw.h .cpp         USART0, 115200 8N1
                   usart_c.h               C API for Unity
                   mock_usart.h .cpp       test mock
+lib/twi/          Twi.h .cpp              blocking I2C master
+lib/lcd/          ILcd.h                  16x2 text; used by led (and later display)
+                  lcd_hw.h .cpp           Grove LCD RGB Backlight over TWI
+                  mock_lcd.h .cpp         2x16 write buffer
+lib/led/          ILed.h                  status cells on LCD row 2
+                  led_hw.h .cpp           CGRAM block / space; talks only to ILcd
+                  mock_led.h .cpp         test mock
+lib/key/          IKey.h                  Grove buttons 1..3
+                  key_hw.h .cpp           D2/D3/D4, debounce >= 20 ms
+                  mock_key.h .cpp         test mock
 lib/controller/   Controller.h .cpp       hysteresis; onTick vs service
+lib/logic/        Demo.h .cpp             Part 1.3 AND/OR/XOR/NAND/NOR/XNOR
 src/              main.cpp, cxx_runtime.cpp
 test/             Unity host suites; unity_config.h for the Uno
 tools/            table generator
@@ -135,20 +146,22 @@ are local checks.
 
 `Documentation/avr_thermostat.md` is the target; this is how far it has got.
 
-Done and covered by 27 host tests: conversion (`convert()` plus the generated
-table), the hysteresis controller, and the temperature, timer, heater and
-USART interfaces with their mocks. The interrupt-driven ADC, the 1 Hz Timer 0
-tick and USART0 are written. Firmware links.
+Done and covered by host tests: conversion (`convert()` plus the generated
+table), the hysteresis controller, the temperature, timer, heater and USART
+interfaces with their mocks, and Part 1 (LCD status row, Grove keys, logic
+demo). The interrupt-driven ADC, the 1 Hz Timer 0 tick, USART0 and a blocking
+TWI master are written. Firmware currently runs the Part 1 demo: keys 1 and 2
+drive AND/OR/XOR/NAND/NOR/XNOR on LCD row 2.
 
-Timers are allocated for the whole design. Timer 1 is reserved for the servo
-(the only 16-bit counter). Timer 2 stays free because its `OC2A` output is
-the servo pin. The tick is Timer 0 in CTC, divided by 125 in software.
+Timers are allocated for the whole design. Timer 1 is the servo: hardware PWM
+on `OC1A` (D9, white of Grove port D8). The encoder is D6/D7, switch on D12.
+Timer 2 is unused. The tick is Timer 0 in CTC, divided by 125 in software.
 
 Neither interrupt does arithmetic. The tick starts a conversion; the ADC
 completion interrupt latches the count and sets `available()`; interpolation
 runs in the main loop via `ITemperature::get()`. `Controller` is split the
-same way: `onTick()` in interrupt context, `service()` in the loop.
+same way: `onTick()` in interrupt context, `service()` in the loop. The Part 1
+demo has no ISR of its own: keys are polled and I2C runs in the main loop.
 
-Still to come: a hardware `IHeater`, which is why `src/main.cpp` reads the
-sensor instead of constructing a `Controller`; the LCD, button, encoder and
-servo drivers; and EEPROM for the setpoint.
+Still to come: Part 2 thermometer bar, Part 3 numeric display, encoder and
+servo, a hardware `IHeater`, and EEPROM for the setpoint.

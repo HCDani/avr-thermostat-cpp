@@ -13,9 +13,8 @@
 
 namespace {
 
-// Timer 0 rather than Timer 1. Timer 1 is the only 16-bit counter on the part
-// and the servo needs that width for pulse timing. Timer 2 is left alone too,
-// because its OC2A output is D11, the servo signal pin.
+// Timer 0 rather than Timer 1. Timer 1 is the only 16-bit counter and drives
+// the servo as hardware PWM on OC1A (D9). Timer 2 is unused.
 //
 // The cost of an 8-bit counter is that 1 Hz is out of hardware reach: even the
 // coarsest prescaler leaves 15625 counts in a second. So the compare unit runs

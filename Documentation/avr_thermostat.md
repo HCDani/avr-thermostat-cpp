@@ -22,7 +22,7 @@ driver is an **abstract interface** with a hardware implementation, and the
 | Matrix keyboard (value entry, A4)    | **Grove – Encoder with push button**         | Rotate = change value, press = save |
 | Analogue temperature sensor TMP36    | **Grove - Temperature Sensor (NTC)**         | Thermistor, analogue output |
 | Servo motor                          | **Grove Mini Servo** (same as before)        | Valve actuator |
-| VIA shield                           | Grove Base Shield / direct wiring            | See §1.3 |
+| VIA shield                           | Grove Base Shield 2.0                        | See §1.3 |
 
 ### LCD usage convention
 
@@ -48,7 +48,7 @@ driver is an **abstract interface** with a hardware implementation, and the
 | 3   | Grove – Button                           | 1 in kit (buy 2 more)| Keys 1..3 |
 | 1   | Grove – Encoder **with push button**     | No (kit ships a rotary *angle* sensor instead) | Setpoint entry |
 | 1   | Grove Mini Servo                         | Yes                  | Valve |
-| 1   | Grove Base Shield (or direct wiring)     | Yes                  | Interconnect |
+| 1   | Grove Base Shield 2.0                    | Yes                  | Interconnect |
 | 10  | Grove cables                             | Yes                  | Wiring |
 | 1   | Arduino Uno                                | — (own)              | MCU |
 
@@ -80,7 +80,7 @@ T  = 1.0 / (log(R / R0) / B + 1/298.15) - 273.15   // degrees Celsius
 - Incremental rotary encoder, 360° travel, two digital quadrature outputs
   (channels A, B). *This revision additionally exposes the internal push
   button as a third signal (SW)* — the base Grove-Encoder does not, so wire
-  the SW pin out to a spare MCU pin.
+  the SW pin out to D12 on the Arduino header.
 - 4.5–5.5 V, ~20 mA.
 
 **Grove – Button** (wiki: `Grove-Button`)
@@ -91,31 +91,33 @@ T  = 1.0 / (log(R / R0) / B + 1/298.15) - 273.15   // degrees Celsius
 
 ### 1.3 Interconnect and pin map (Arduino Uno)
 
-A Grove port is just VCC/GND + up to two signal wires. On the **official
-Grove Base v3 shield** (designed for the Uno) the module ports map to the
-following Uno pins, and the wiring below uses exactly those:
+A Grove port is VCC/GND plus up to two signal wires. Hardware is a **Grove
+Base Shield 2.0** on the Uno. A digital port labelled Dn is yellow = Dn,
+white = D(n+1). Digital Grove ports are D2..D8; D10–D13 exist only on the
+Arduino header.
 
-| Grove Base port | Uno pins (signal 1, signal 2) |
-|:---------------:|:-----------------------------:|
-| 1 | A0, A1 |
-| 2 | A2, A3 |
-| 3 | A4, A5 (I2C) |
-| 4 | A6, A7 |
-| 5 | D9, D8 |
-| 6 | D10, D11 |
-| 7 | D13, D12 |
-| 8 | D6, D5 |
+| Grove port | Yellow | White |
+|:----------:|:------:|:-----:|
+| D2 | D2 | D3 |
+| D3 | D3 | D4 |
+| D4 | D4 | D5 |
+| D5 | D5 | D6 |
+| D6 | D6 | D7 |
+| D7 | D7 | D8 |
+| D8 | D8 | D9 |
+| A0 | A0 | A1 |
+| I2C | SCL (A5) | SDA (A4) |
 
-| Module        | VCC  | GND | Signal 1 (yellow) | Signal 2 (white) | Uno pin(s)            |
-|---------------|------|-----|-------------------|------------------|------------------------|
-| LCD 16x2      | 5V   | GND | SCL               | SDA              | A5, A4 (I2C, port 3)   |
-| Temperature   | 5V   | GND | SIG (ADC)         | —                | A0 (port 1)            |
-| Button key 1  | 5V   | GND | SIG               | —                | D2 (direct)            |
-| Button key 2  | 5V   | GND | SIG               | —                | D3 (direct)            |
-| Button key 3  | 5V   | GND | SIG               | —                | D4 (direct)            |
-| Encoder A/B   | 5V   | GND | A                 | B                | D9, D8 (port 5)        |
-| Encoder SW    | —    | GND | — (separate wire) | —                | D10 (internal pull-up) |
-| Mini Servo    | 5V   | GND | SIG (PWM)         | —                | D11 (port 6)           |
+| Module        | VCC  | GND | Signal 1 (yellow) | Signal 2 (white) | Uno pin(s)                    |
+|---------------|------|-----|-------------------|------------------|--------------------------------|
+| LCD 16x2      | 5V   | GND | SCL               | SDA              | A5, A4 (I2C)                   |
+| Temperature   | 5V   | GND | SIG (ADC)         | —                | A0                             |
+| Button key 1  | 5V   | GND | SIG               | —                | D2                             |
+| Button key 2  | 5V   | GND | SIG               | —                | D3                             |
+| Button key 3  | 5V   | GND | SIG               | —                | D4                             |
+| Encoder A/B   | 5V   | GND | A                 | B                | D6, D7 (port D6)               |
+| Encoder SW    | —    | GND | — (separate wire) | —                | D12 (header, internal pull-up) |
+| Mini Servo    | 5V   | GND | —                 | SIG (PWM)        | D9 (port D8 white; D8 unused)  |
 
 Power: all modules are 5 V logic. The LCD, encoder and buttons are I2C/digital
 only; the NTC drives an ADC input (A0). The Uno's 5 V pin supplies the
@@ -233,9 +235,9 @@ programmatically press keys, `MockLcd` records what was written to row 1/row 2,
 
 ### Timing / interrupt strategy (all parts)
 
-- **Timer 0 in CTC mode is the 1 Hz system tick.** Timer 1 is reserved for the
-  servo and Timer 2 for the servo's output pin. Each tick starts one ADC
-  conversion and sets the application's "refresh due" flag.
+- **Timer 0 in CTC mode is the 1 Hz system tick.** Timer 1 drives the servo
+  with hardware PWM on `OC1A` (D9). Timer 2 is unused. Each tick starts one
+  ADC conversion and sets the application's "refresh due" flag.
 - **ADC completion interrupt (`ADIE`)**: the ISR only latches `ADCL/ADCH` and
   sets the driver's available flag. The ADC is **not** in continuous mode, it
   converts once per tick.
@@ -246,7 +248,7 @@ programmatically press keys, `MockLcd` records what was written to row 1/row 2,
   This fulfils the original requirement *"update of the display must be timer
   interrupt driven"*: the interrupt drives the update, the write happens in
   loop context.
-- **Encoder quadrature** is evaluated in pin-change interrupts on D8/D9
+- **Encoder quadrature** is evaluated in pin-change interrupts on D6/D7
   (short ISR: update a 2-bit state machine, accumulate the step count).
 - Keys and the encoder button are polled with debounce in the main loop.
 
@@ -261,17 +263,19 @@ Design and implement drivers for the **Grove buttons** (keys) and the
   state)` with ledNo 1..8 mapped to row 2, positions 1..8.
 - Part 1.2 — key input driver for **three** Grove buttons: `Key::init()`,
   `Key::get(keyNo)` for keyNo 1..3.
-- Part 1.3 — **Demo application**: row 2 must show the results of six logic
-  operators between the states of **key 1** and **key 2**:
+- Part 1.3 — **Demo application**: row 2 must show the two key states followed
+  by the results of six logic operators between **key 1** and **key 2**.
+  Position 1 is key 1 and position 2 is key 2, so the inputs are visible
+  beside the results:
 
-  | Key 1 | Key 2 | Pos 1 AND | Pos 2 OR | Pos 3 XOR | Pos 4 NAND | Pos 5 NOR | Pos 6 XNOR |
-  |:-----:|:-----:|:---------:|:--------:|:---------:|:----------:|:---------:|:----------:|
-  |   0   |   0   |     0     |     0    |     0     |     1      |     1     |     1      |
-  |   0   |   1   |     0     |     1    |     1     |     1      |     0     |     0      |
-  |   1   |   0   |     0     |     1    |     1     |     1      |     0     |     0      |
-  |   1   |   1   |     1     |     1    |     0     |     0      |     0     |     1      |
+  | Key 1 | Key 2 | Pos 1 Key 1 | Pos 2 Key 2 | Pos 3 AND | Pos 4 OR | Pos 5 XOR | Pos 6 NAND | Pos 7 NOR | Pos 8 XNOR |
+  |:-----:|:-----:|:-----------:|:-----------:|:---------:|:--------:|:---------:|:----------:|:---------:|:----------:|
+  |   0   |   0   |      0      |      0      |     0     |     0    |     0     |     1      |     1     |     1      |
+  |   0   |   1   |      0      |      1      |     0     |     1    |     1     |     1      |     0     |     0      |
+  |   1   |   0   |      1      |      0      |     0     |     1    |     1     |     1      |     0     |     0      |
+  |   1   |   1   |      1      |      1      |     1     |     1    |     0     |     0      |     0     |     1      |
 
-  (Positions 7..16 of row 2 stay off.)
+  (Positions 9..16 of row 2 stay off.)
 
 ## 4. Part 2: Thermometer (NTC)
 

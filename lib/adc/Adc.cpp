@@ -11,7 +11,7 @@ namespace {
 
 // The ISR is a free function at global scope and cannot be handed a this
 // pointer, so the registered callback lives here.
-hal::ConversionCallback g_callback = 0;
+adc::ConversionCallback g_callback = 0;
 
 }  // namespace
 
