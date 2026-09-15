@@ -116,7 +116,7 @@ Arduino header.
 | Button key 2  | 5V   | GND | SIG               | —                | D3                             |
 | Button key 3  | 5V   | GND | SIG               | —                | D4                             |
 | Encoder A/B   | 5V   | GND | A                 | B                | D6, D7 (port D6)               |
-| Encoder SW    | —    | GND | — (separate wire) | —                | D12 (header, internal pull-up) |
+| Encoder SW    | —    | GND | — (separate wire) | —                | D12 (header, active low, internal pull-up) |
 | Mini Servo    | 5V   | GND | —                 | SIG (PWM)        | D9 (port D8 white; D8 unused)  |
 
 Power: all modules are 5 V logic. The LCD, encoder and buttons are I2C/digital
@@ -368,9 +368,10 @@ When row 1 shows tlow or thigh:
 - **Rotating the encoder** adjusts the value: 1° per detent, CW increases,
   CCW decreases, clamped to **0…60 °C**.
 - A **short press** of the encoder push button **saves** the value
-  (replaces the `#` key).
-- A **long press** (≥ 1 s) **cancels** the change and restores the previous
-  value (replaces the `*` key).
+  (replaces the `#` key) and returns row 1 to the current temperature.
+- A **long press** (≥ 1 s) **cancels** the change, leaves the stored value
+  untouched (replaces the `*` key) and returns row 1 to the current
+  temperature.
 
 (While row 1 shows the current temperature the encoder has no effect.)
 

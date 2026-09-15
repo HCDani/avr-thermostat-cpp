@@ -9,10 +9,13 @@ say so rather than picking one silently.
 
 One library per driver, each holding an interface, a hardware implementation
 and a mock: `lib/adc`, `lib/temp`, `lib/timer`, `lib/heater`, `lib/usart`,
-`lib/twi`, `lib/lcd`, `lib/led`, `lib/display`, `lib/key`. The thermostat application is
-`lib/controller`; the Part 1 demo is `lib/logic`; Part 2 is `lib/thermo`. Only `lib/adc/Adc.cpp`,
+`lib/twi`, `lib/lcd`, `lib/led`, `lib/display`, `lib/key`, `lib/encoder`,
+`lib/servo`. The thermostat application is
+`lib/controller`; the Part 1 demo is `lib/logic`; Part 2 is `lib/thermo`;
+Part 4 is `lib/solar`. Only `lib/adc/Adc.cpp`,
 `lib/temp/temp_hw.cpp`, `lib/timer/timer_hw.cpp`, `lib/usart/usart_hw.cpp`,
-`lib/twi/Twi.cpp`, `lib/lcd/lcd_hw.cpp`, `lib/key/key_hw.cpp` and `src/`
+`lib/twi/Twi.cpp`, `lib/lcd/lcd_hw.cpp`, `lib/key/key_hw.cpp`,
+`lib/encoder/encoder_hw.cpp`, `lib/servo/servo_hw.cpp` and `src/`
 touch AVR headers.
 
 ## Commands
@@ -51,7 +54,8 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
   being asked.
 - **Timer allocation is fixed.** Timer 1 is the servo: it is the only 16-bit
   counter, and SIG is D9 (`OC1A`), so the pulse is hardware PWM, not an ISR
-  toggle. The encoder is on D6/D7; its switch is D12 on the Arduino header.
+  toggle. The encoder is on D6/D7; its switch is D12 on the Arduino header
+  and is **active low** (internal pull-up).
   Timer 2 stays unused (`OC2A` is D11, not on the Grove shield; `OC2B` is D3,
   key 2). The 1 Hz tick is Timer 0 in CTC with a software divide by 125:
   16 MHz / 1024 = 15625 = 5^6, so 125 divides it exactly and the tick does

@@ -13,19 +13,6 @@ using lcd::MockLcd;
 void setUp(void) {}
 void tearDown(void) {}
 
-static void assertRange(const MockLcd& lcd) {
-    TEST_ASSERT_EQUAL_INT('B', lcd.cell(0, 0));
-    TEST_ASSERT_EQUAL_INT('A', lcd.cell(1, 0));
-    TEST_ASSERT_EQUAL_INT('R', lcd.cell(2, 0));
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(3, 0));
-    TEST_ASSERT_EQUAL_INT('2', lcd.cell(4, 0));
-    TEST_ASSERT_EQUAL_INT('1', lcd.cell(5, 0));
-    TEST_ASSERT_EQUAL_INT('-', lcd.cell(6, 0));
-    TEST_ASSERT_EQUAL_INT('2', lcd.cell(7, 0));
-    TEST_ASSERT_EQUAL_INT('8', lcd.cell(8, 0));
-    TEST_ASSERT_EQUAL_INT('C', lcd.cell(9, 0));
-}
-
 static void init_brings_up_the_lcd(void) {
     MockLcd lcd;
     DisplayHw display(lcd);
@@ -35,67 +22,81 @@ static void init_brings_up_the_lcd(void) {
     TEST_ASSERT_TRUE(lcd.inited());
 }
 
-static void showUInt_does_not_write_until_a_tick_is_serviced(void) {
+static void temp_twenty_three_matches_the_spec_layout(void) {
     MockLcd lcd;
     DisplayHw display(lcd);
     display.init();
 
-    display.showUInt(210);
-
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-
+    display.setHeading("TEMP");
+    display.showUInt(23);
     display.service();
 
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-
-    display.onTick();
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-
-    display.service();
-
-    assertRange(lcd);
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-    TEST_ASSERT_EQUAL_INT('2', lcd.cell(11, 0));
-    TEST_ASSERT_EQUAL_INT('1', lcd.cell(12, 0));
-    TEST_ASSERT_EQUAL_INT('.', lcd.cell(13, 0));
-    TEST_ASSERT_EQUAL_INT('0', lcd.cell(14, 0));
-    TEST_ASSERT_EQUAL_INT('C', lcd.cell(15, 0));
+    TEST_ASSERT_EQUAL_INT('T', lcd.cell(0, 0));
+    TEST_ASSERT_EQUAL_INT('E', lcd.cell(1, 0));
+    TEST_ASSERT_EQUAL_INT('M', lcd.cell(2, 0));
+    TEST_ASSERT_EQUAL_INT('P', lcd.cell(3, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(4, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(5, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(6, 0));
+    TEST_ASSERT_EQUAL_INT('2', lcd.cell(7, 0));
+    TEST_ASSERT_EQUAL_INT('3', lcd.cell(8, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(9, 0));
+    TEST_ASSERT_EQUAL_INT('C', lcd.cell(10, 0));
 }
 
-static void a_small_value_keeps_leading_spaces(void) {
+static void thigh_uses_two_spaces_before_the_digits(void) {
     MockLcd lcd;
     DisplayHw display(lcd);
     display.init();
 
-    display.showUInt(21);
-    display.onTick();
+    display.setHeading("THIGH");
+    display.showUInt(25);
     display.service();
 
-    assertRange(lcd);
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(11, 0));
-    TEST_ASSERT_EQUAL_INT('2', lcd.cell(12, 0));
-    TEST_ASSERT_EQUAL_INT('.', lcd.cell(13, 0));
-    TEST_ASSERT_EQUAL_INT('1', lcd.cell(14, 0));
-    TEST_ASSERT_EQUAL_INT('C', lcd.cell(15, 0));
+    TEST_ASSERT_EQUAL_INT('T', lcd.cell(0, 0));
+    TEST_ASSERT_EQUAL_INT('H', lcd.cell(1, 0));
+    TEST_ASSERT_EQUAL_INT('I', lcd.cell(2, 0));
+    TEST_ASSERT_EQUAL_INT('G', lcd.cell(3, 0));
+    TEST_ASSERT_EQUAL_INT('H', lcd.cell(4, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(5, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(6, 0));
+    TEST_ASSERT_EQUAL_INT('2', lcd.cell(7, 0));
+    TEST_ASSERT_EQUAL_INT('5', lcd.cell(8, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(9, 0));
+    TEST_ASSERT_EQUAL_INT('C', lcd.cell(10, 0));
 }
 
-static void twenty_eight_is_right_justified_with_a_decimal(void) {
+static void tlow_eighteen_matches_the_spec_layout(void) {
     MockLcd lcd;
     DisplayHw display(lcd);
     display.init();
 
-    display.showUInt(280);
+    display.setHeading("TLOW");
+    display.showUInt(18);
+    display.service();
+
+    TEST_ASSERT_EQUAL_INT('T', lcd.cell(0, 0));
+    TEST_ASSERT_EQUAL_INT('L', lcd.cell(1, 0));
+    TEST_ASSERT_EQUAL_INT('O', lcd.cell(2, 0));
+    TEST_ASSERT_EQUAL_INT('W', lcd.cell(3, 0));
+    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(6, 0));
+    TEST_ASSERT_EQUAL_INT('1', lcd.cell(7, 0));
+    TEST_ASSERT_EQUAL_INT('8', lcd.cell(8, 0));
+    TEST_ASSERT_EQUAL_INT('C', lcd.cell(10, 0));
+}
+
+static void onTick_without_showUInt_still_refreshes(void) {
+    MockLcd lcd;
+    DisplayHw display(lcd);
+    display.init();
+    display.setHeading("TEMP");
+    display.showUInt(23);
+    display.service();
+
     display.onTick();
     display.service();
 
-    assertRange(lcd);
-    TEST_ASSERT_EQUAL_INT(' ', lcd.cell(10, 0));
-    TEST_ASSERT_EQUAL_INT('2', lcd.cell(11, 0));
-    TEST_ASSERT_EQUAL_INT('8', lcd.cell(12, 0));
-    TEST_ASSERT_EQUAL_INT('.', lcd.cell(13, 0));
-    TEST_ASSERT_EQUAL_INT('0', lcd.cell(14, 0));
-    TEST_ASSERT_EQUAL_INT('C', lcd.cell(15, 0));
+    TEST_ASSERT_EQUAL_INT('3', lcd.cell(8, 0));
 }
 
 static void row_two_is_left_alone(void) {
@@ -103,8 +104,8 @@ static void row_two_is_left_alone(void) {
     DisplayHw display(lcd);
     display.init();
 
-    display.showUInt(210);
-    display.onTick();
+    display.setHeading("TEMP");
+    display.showUInt(23);
     display.service();
 
     TEST_ASSERT_EQUAL_INT(' ', lcd.cell(0, 1));
@@ -113,9 +114,10 @@ static void row_two_is_left_alone(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(init_brings_up_the_lcd);
-    RUN_TEST(showUInt_does_not_write_until_a_tick_is_serviced);
-    RUN_TEST(a_small_value_keeps_leading_spaces);
-    RUN_TEST(twenty_eight_is_right_justified_with_a_decimal);
+    RUN_TEST(temp_twenty_three_matches_the_spec_layout);
+    RUN_TEST(thigh_uses_two_spaces_before_the_digits);
+    RUN_TEST(tlow_eighteen_matches_the_spec_layout);
+    RUN_TEST(onTick_without_showUInt_still_refreshes);
     RUN_TEST(row_two_is_left_alone);
     return UNITY_END();
 }
