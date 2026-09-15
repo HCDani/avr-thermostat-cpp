@@ -77,17 +77,21 @@ lib/usart/        IUsart.h                polled TX
                   usart_c.h               C API for Unity
                   mock_usart.h .cpp       test mock
 lib/twi/          Twi.h .cpp              blocking I2C master
-lib/lcd/          ILcd.h                  16x2 text; used by led (and later display)
+lib/lcd/          ILcd.h                  16x2 text; used by led and display
                   lcd_hw.h .cpp           Grove LCD RGB Backlight over TWI
                   mock_lcd.h .cpp         2x16 write buffer
 lib/led/          ILed.h                  status cells on LCD row 2
                   led_hw.h .cpp           CGRAM block / space; talks only to ILcd
                   mock_led.h .cpp         test mock
+lib/display/      IDisplay.h              numeric display on LCD row 1
+                  display_hw.h .cpp       row 1: BAR 21-28C and e.g. " 21.5C"
+                  mock_display.h .cpp     test mock
 lib/key/          IKey.h                  Grove buttons 1..3
                   key_hw.h .cpp           D2/D3/D4, debounce >= 20 ms
                   mock_key.h .cpp         test mock
 lib/controller/   Controller.h .cpp       hysteresis; onTick vs service
-lib/logic/        Demo.h .cpp             Part 1.3 AND/OR/XOR/NAND/NOR/XNOR
+lib/logic/        Demo.h .cpp             Part 1.3 key states then AND/OR/XOR/NAND/NOR/XNOR
+lib/thermo/       Thermometer.h .cpp      Part 2+3: bar 21–28 C, row 1 range + XX.XC
 src/              main.cpp, cxx_runtime.cpp
 test/             Unity host suites; unity_config.h for the Uno
 tools/            table generator
@@ -150,8 +154,9 @@ Done and covered by host tests: conversion (`convert()` plus the generated
 table), the hysteresis controller, the temperature, timer, heater and USART
 interfaces with their mocks, and Part 1 (LCD status row, Grove keys, logic
 demo). The interrupt-driven ADC, the 1 Hz Timer 0 tick, USART0 and a blocking
-TWI master are written. Firmware currently runs the Part 1 demo: keys 1 and 2
-drive AND/OR/XOR/NAND/NOR/XNOR on LCD row 2.
+TWI master are written. Firmware currently runs Parts 2 and 3: the NTC is sampled
+once a second; LCD row 2 shows a 21–28 °C bar and row 1 shows `BAR 21-28C`
+plus the reading as tenths of a degree, e.g. ` 21.5C`.
 
 Timers are allocated for the whole design. Timer 1 is the servo: hardware PWM
 on `OC1A` (D9, white of Grove port D8). The encoder is D6/D7, switch on D12.
@@ -162,6 +167,8 @@ completion interrupt latches the count and sets `available()`; interpolation
 runs in the main loop via `ITemperature::get()`. `Controller` is split the
 same way: `onTick()` in interrupt context, `service()` in the loop. The Part 1
 demo has no ISR of its own: keys are polled and I2C runs in the main loop.
+`Thermometer` is split like `Controller`: `onTick()` starts a conversion and
+marks a display refresh, `service()` converts, draws the bar, and writes row 1.
 
-Still to come: Part 2 thermometer bar, Part 3 numeric display, encoder and
-servo, a hardware `IHeater`, and EEPROM for the setpoint.
+Still to come: encoder and servo, a hardware `IHeater`, and EEPROM for the
+setpoint.

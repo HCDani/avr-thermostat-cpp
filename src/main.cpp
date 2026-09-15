@@ -1,21 +1,26 @@
-// Part 1 firmware: Grove buttons on D2/D3/D4 and LCD row 2 as eight status
-// cells. The demo writes key 1 and key 2 into positions 1 and 2, then
-// AND/OR/XOR/NAND/NOR/XNOR of the two into positions 3 to 8.
-// I2C and debounce run in the main loop, never in an ISR.
-//
-// The same states are traced over USART0 at 115200 8N1, so the keys can be
-// watched on the serial monitor as well as on the LCD.
+// Part 2+3 firmware: NTC on A0, sampled once per 1 Hz tick. Bar on LCD row 2
+// spanning 21–28 C; tenths of a degree on the numeric display (row 1). The
+// tick only starts a conversion and marks a refresh; I2C and interpolation
+// run in the main loop.
 #if defined(__AVR__) && !defined(PIO_UNIT_TESTING)
 
-#include "Demo.h"
+#include <avr/interrupt.h>
+#include <stdint.h>
+
+#include "Adc.h"
 #include "IUsart.h"
-#include "key_hw.h"
+#include "Thermometer.h"
+#include "display_hw.h"
 #include "lcd_hw.h"
 #include "led_hw.h"
+#include "temp_hw.h"
+#include "timer_hw.h"
 #include "Twi.h"
 #include "usart_hw.h"
 
 namespace {
+
+const uint8_t kThermistorPin = 0;
 
 void print(usart::IUsart& out, const char* s) {
     while (*s != '\0') {
@@ -28,10 +33,21 @@ void printBit(usart::IUsart& out, bool value) {
     out.write(value ? static_cast<uint8_t>('1') : static_cast<uint8_t>('0'));
 }
 
-void printHex(usart::IUsart& out, uint8_t value) {
-    const char* digits = "0123456789ABCDEF";
-    out.write(static_cast<uint8_t>(digits[value >> 4]));
-    out.write(static_cast<uint8_t>(digits[value & 0x0F]));
+void printDec(usart::IUsart& out, int16_t value) {
+    if (value < 0) {
+        out.write(static_cast<uint8_t>('-'));
+        value = static_cast<int16_t>(-value);
+    }
+    char buf[6];
+    uint8_t n = 0;
+    do {
+        buf[n++] = static_cast<char>('0' + (value % 10));
+        value = static_cast<int16_t>(value / 10);
+    } while (value != 0);
+    while (n > 0) {
+        --n;
+        out.write(static_cast<uint8_t>(buf[n]));
+    }
 }
 
 }  // namespace
@@ -40,61 +56,39 @@ int main() {
     twi::Twi bus;
     lcd::LcdHw lcd(bus);
     led::LedHw leds(lcd);
-    key::KeyHw keys;
-    logic::Demo demo(keys, leds);
+    display::DisplayHw numeric(lcd);
+    adc::Adc adc;
+    temp::TemperatureHw sensor(adc, kThermistorPin);
+    timer::TimerHw clock;
+    thermo::Thermometer thermo(sensor, leds, numeric);
     usart::UsartHw trace;
 
     trace.init();
-    print(trace, "\r\npart1 boot: usart0 115200 8N1\r\n");
-    print(trace, "init lcd 0x3E rgb 0x62 (LCD RGB Backlight v2.0), keys D2 D3 D4\r\n");
+    print(trace, "\r\npart3 boot: usart0 115200 8N1  ntc A0  bar 21-28 C\r\n");
 
-    demo.init();
+    thermo.init();
+    clock.init(&thermo);
 
-    print(trace, bus.ok() ? "lcd acked\r\n" : "lcd did NOT ack, twsr 0x");
-    if (!bus.ok()) {
-        printHex(trace, bus.status());
-        print(trace, " (FF = bus never released; keys still traced below)\r\n");
-    }
-    // Temporary bring-up label on row 1, which Part 3 will own. If this text is
-    // readable then the bus, the init sequence and the backlight are all good,
-    // which separates an LCD fault from a row-2 glyph fault.
-    // Temporary bring-up label on row 1, which Part 3 will own. If this text is
-    // readable then the bus, the init sequence and the backlight are all good,
-    // which separates an LCD fault from a row-2 glyph fault.
-    lcd.setCursor(0, 0);
-    lcd.write("PART1 KEYS");
+    print(trace, "drivers up\r\n");
 
-    print(trace, "drivers up   keys 123  row2 K1 K2 AND OR XOR NAND NOR XNOR\r\n");
+    sei();
+    clock.start();
 
-    bool previous[3] = {false, false, false};
-    bool first = true;
+    int16_t previous = 0x7FFF;
 
     for (;;) {
-        // Latch the debounced states first. Reading them here before service()
-        // keeps the traced row in step with the keys: whichever call sees a
-        // change first is the one that settles the debounce, and service() must
-        // not be the one left behind.
-        const bool k1 = keys.get(1);
-        const bool k2 = keys.get(2);
-        const bool k3 = keys.get(3);
+        thermo.service();
 
-        demo.service();
-
-        if (first || k1 != previous[0] || k2 != previous[1] || k3 != previous[2]) {
-            print(trace, "keys ");
-            printBit(trace, k1);
-            printBit(trace, k2);
-            printBit(trace, k3);
-            print(trace, "  row2 ");
+        const int16_t now = thermo.temperature().raw();
+        if (now != previous) {
+            print(trace, "t ");
+            printDec(trace, now);
+            print(trace, "  bar ");
             for (uint8_t n = 1; n <= 8; ++n) {
                 printBit(trace, leds.get(n));
             }
             print(trace, "\r\n");
-
-            previous[0] = k1;
-            previous[1] = k2;
-            previous[2] = k3;
-            first = false;
+            previous = now;
         }
     }
 }

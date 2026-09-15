@@ -9,8 +9,8 @@ say so rather than picking one silently.
 
 One library per driver, each holding an interface, a hardware implementation
 and a mock: `lib/adc`, `lib/temp`, `lib/timer`, `lib/heater`, `lib/usart`,
-`lib/twi`, `lib/lcd`, `lib/led`, `lib/key`. The thermostat application is
-`lib/controller`; the Part 1 demo is `lib/logic`. Only `lib/adc/Adc.cpp`,
+`lib/twi`, `lib/lcd`, `lib/led`, `lib/display`, `lib/key`. The thermostat application is
+`lib/controller`; the Part 1 demo is `lib/logic`; Part 2 is `lib/thermo`. Only `lib/adc/Adc.cpp`,
 `lib/temp/temp_hw.cpp`, `lib/timer/timer_hw.cpp`, `lib/usart/usart_hw.cpp`,
 `lib/twi/Twi.cpp`, `lib/lcd/lcd_hw.cpp`, `lib/key/key_hw.cpp` and `src/`
 touch AVR headers.

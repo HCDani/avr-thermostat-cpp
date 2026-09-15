@@ -290,8 +290,9 @@ Requirements:
    §1.2.
 2. Display the temperature as a **bar in LCD row 2** (extend your status
    driver with a bar feature, e.g. `Led::bar(lo, hi, value)` or similar).
-   Range **18–25 °C**: position 1 lights if T ≥ 18 °C, all 8 positions light
-   if T ≥ 25 °C; intermediate positions fill proportionally.
+   Range **21–28 °C**: position 1 lights if T ≥ 21 °C, all 8 positions light
+   if T ≥ 28 °C; intermediate positions fill proportionally. Positions 9–16
+   stay off; the numeric reading is Part 3’s row-1 display.
 
 ## 5. Part 3: Numeric Display Driver (LCD Row 1)
 
@@ -300,8 +301,10 @@ Design and implement a driver for **row 1 of the 16x2 LCD**, replacing the
 
 Requirements:
 
-1. Interface: `Display::init()`, `Display::showUInt(uint16_t value)` (right-
-   justified in row 1, leading zeros like the original 7-seg display).
+1. Interface: `Display::init()`, `Display::showUInt(uint16_t value)` where
+   `value` is tenths of a degree. Row 1 left (positions 1–10) is the bar
+   range `BAR 21-28C`. Positions 11–16 show the reading, right-justified,
+   one decimal place and a trailing C, e.g. ` 21.5C`.
 2. **Updates must be timer interrupt driven** — the 1 Hz timer tick marks a
    refresh; the driver writes row 1 on the next main-loop pass (§2).
 3. Divide the code into logical abstraction layers: display-driver functions
