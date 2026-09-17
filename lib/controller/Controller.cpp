@@ -2,7 +2,7 @@
 
 namespace controller {
 
-Controller::Controller(heater::IHeater& relay, temp::ITemperature& sensor, const Config& config)
+Controller::Controller(relay::IRelay& relay, temp::ITemperature& sensor, const Config& config)
     : relay_(relay),
       sensor_(sensor),
       config_(config),

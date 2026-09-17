@@ -10,13 +10,56 @@ say so rather than picking one silently.
 One library per driver, each holding an interface, a hardware implementation
 and a mock: `lib/adc`, `lib/temp`, `lib/timer`, `lib/heater`, `lib/usart`,
 `lib/twi`, `lib/lcd`, `lib/led`, `lib/display`, `lib/key`, `lib/encoder`,
-`lib/servo`. The thermostat application is
-`lib/controller`; the Part 1 demo is `lib/logic`; Part 2 is `lib/thermo`;
-Part 4 is `lib/solar`. Only `lib/adc/Adc.cpp`,
+`lib/servo`, `lib/settings`. **The application is `lib/solar`**, Part 4 of the
+specification; the Part 1 demo is `lib/logic` and Parts 2 and 3 are
+`lib/thermo`.
+`lib/controller` is *not* the application — see the heater note below. Only
+`lib/adc/Adc.cpp`,
 `lib/temp/temp_hw.cpp`, `lib/timer/timer_hw.cpp`, `lib/usart/usart_hw.cpp`,
 `lib/twi/Twi.cpp`, `lib/lcd/lcd_hw.cpp`, `lib/key/key_hw.cpp`,
-`lib/encoder/encoder_hw.cpp`, `lib/servo/servo_hw.cpp` and `src/`
+`lib/encoder/encoder_hw.cpp`, `lib/servo/servo_hw.cpp`,
+`lib/settings/settings_hw.cpp` and `src/`
 touch AVR headers.
+
+## The heater, and what replaces it
+
+`lib/heater` and `lib/controller` are the remains of the project's first
+framing, from 3 September: a generic thermostat switching a relay as a heater,
+proposed before the VIA assignment series became the specification. The
+specification never mentions a heater or a relay — its Part 4 application is
+solar control with a servo valve and a pump. So `lib/heater` holds an interface
+and a mock and no driver, `src/` references neither library, and both are
+reachable only from the host tests. `lib/solar` has its own hysteresis, which
+means that logic exists twice and the copy with the fault latch drives nothing.
+
+**Approved 17 September, being implemented.** Part 4 gains a real pump relay
+on D5, setpoints persisted in EEPROM, and the fault latch `lib/solar` currently
+lacks. See §1.3 and §6.3–6.5 of the specification, which is written and is the
+authority. The plan, in order:
+
+- **Done: `lib/settings`, wired into `lib/solar` and `src/`.** `ISettings`
+  takes whole degrees, not `DeciCelsius`: the encoder edits in whole degrees,
+  `Solar` holds its setpoints as `uint8_t`, and that is what fits the two
+  bytes. `Sanitize.{h,cpp}` holds the pair rule and the defaults 18/25, used
+  by `settings_hw.{h,cpp}` and by the mock, so no copy of that policy exists
+  anywhere else. `Solar` no longer owns the defaults: it takes them from the
+  store in its constructor, reloads in `init()`, saves on the short-press
+  commit and then **reads the pair back**, because the store is the authority
+  on what was kept and a cancelled save leaves it unchanged. 17 host tests,
+  `settings_hw.cpp` is the only file that includes `<avr/eeprom.h>`.
+- `lib/heater` becomes **`lib/relay`** with `IRelay`, `relay_hw.{h,cpp}` and
+  the existing mock. The pump is not a heater and nothing in the repo should
+  say it is.
+- `relay_hw.cpp` joins the AVR-header list above; `settings_hw.cpp` is
+  already on it.
+- `lib/solar` then takes `IRelay` as well, and gains the fault latch.
+- `lib/controller` keeps its 21 tests. Reuse its **fault-counting behaviour**
+  in `lib/solar`, not its control law: `Controller` is setpoint ± hysteresis,
+  Part 4 is two independent thresholds.
+
+Until the relay lands, do not write that the controller switches a relay, and
+do not claim that anything drives a pump pin: the pump is still only row-2
+position 7 on the LCD.
 
 ## Commands
 
@@ -56,8 +99,14 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
   counter, and SIG is D9 (`OC1A`), so the pulse is hardware PWM, not an ISR
   toggle. The encoder is on D6/D7; its switch is D12 on the Arduino header
   and is **active low** (internal pull-up).
-  Timer 2 stays unused (`OC2A` is D11, not on the Grove shield; `OC2B` is D3,
-  key 2). The 1 Hz tick is Timer 0 in CTC with a software divide by 125:
+ Timer 2 stays unused (`OC2A` is D11, not on the Grove shield; `OC2B` is D3,
+ key 2). **The pump relay is D5, which is `OC0B`** — Timer 0's compare-match-B
+ output, and Timer 0 is the tick. Drive D5 as a plain GPIO and leave `COM0B`
+ at `00`, or the timer takes the pin. Port D5 also shares the D6 line with
+ port D6 (the encoder), which is safe only because the relay is a
+ single-signal module: confirmed 17 September that the encoder is in the D6
+ socket and nothing is plugged into port D5's white pin.
+ The 1 Hz tick is Timer 0 in CTC with a software divide by 125:
   16 MHz / 1024 = 15625 = 5^6, so 125 divides it exactly and the tick does
   not drift. A `static_assert` fails the build if a clock or prescaler
   change ever makes that division inexact.
@@ -98,10 +147,12 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
 - Reference values in the tests come from the generator's printed output. If the
   sensor parameters change, regenerate the table and update the assertions in
   the same change.
-- No interface header, no application code and nothing under
-  `lib/thermostat/include/thermostat/` may include an AVR header, except
+- No `I*.h` interface header and no application code — `lib/controller`,
+  `lib/logic`, `lib/thermo`, `lib/solar` — may include an AVR header, except
   `Progmem.h`, which is already guarded. Registers belong in the `*_hw.cpp`
-  files. That separation is what makes host testing possible.
+  files. That separation is what makes host testing possible. (This rule used
+  to name `lib/thermostat/include/thermostat/`, a directory from the
+  3 September layout that no longer exists.)
 - No heap on the target path: no `new`, no `std::vector`, no `std::string`, no
   `<iostream>`. `src/cxx_runtime.cpp` defines `operator delete` because a
   virtual destructor references it, but it is an unreachable linker stub, not
@@ -128,6 +179,19 @@ $env:PATH = "$env:USERPROFILE\.platformio\packages\toolchain-gccmingw32\bin;$env
   `ITemperature::get()`. Do not move arithmetic back into either ISR, and do
   not reintroduce a push-style listener that would deliver readings from
   interrupt context.
+- **EEPROM is `lib/settings` and nothing else.** Read the two setpoint bytes
+  once in `init()` and keep the running values in RAM. Write only on the
+  encoder's short-press commit, never per tick — a cell endures about 100,000
+  erase cycles, so a 1 Hz write exhausts one in a day. Use
+  `eeprom_update_byte`, not `eeprom_write_byte`, so an unchanged value costs
+  nothing. Never touch EEPROM from an ISR: a byte write blocks for roughly
+  3.4 ms. The pair rule — 0..60 and `tlow < thigh`, one predicate,
+  `settings::usable` — is checked on **both** sides of the store, and the two
+  answer a failure differently: the **read** substitutes the defaults through
+  `settings::sanitize`, because a blank EEPROM reads `0xFF` on a new board and
+  the application has to start with something, while the **save cancels** —
+  nothing written, nothing changed, like the long press. Never make a save
+  substitute a value the user did not ask for.
 - `TemperatureHw::readRaw()` masks interrupts around the 16-bit load. The ISR
   writes that latch at roughly the moment the tick reads it, so an unguarded
   read can tear on an 8-bit part.

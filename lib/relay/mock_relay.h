@@ -2,25 +2,27 @@
 
 #include <stdint.h>
 
-#include "IHeater.h"
+#include "IRelay.h"
 
-namespace heater {
+namespace relay {
 
-// Test mock. Counts transitions so a test can prove the relay was not
+// Test mock. Counts transitions so a test can prove the pump was not
 // chattered, which a plain get() cannot show.
-class MockHeater : public IHeater {
+class MockRelay : public IRelay {
 public:
-    MockHeater();
+    MockRelay();
 
     void init() override;
     void set(bool on) override;
     bool get() const override;
 
     uint16_t transitions() const;
+    bool inited() const;
 
 private:
     bool on_;
     uint16_t transitions_;
+    bool inited_;
 };
 
-}  // namespace heater
+}  // namespace relay

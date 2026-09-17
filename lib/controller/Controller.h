@@ -2,10 +2,10 @@
 
 #include <stdint.h>
 
-#include "IHeater.h"
 #include "ITemperature.h"
 #include "DeciCelsius.h"
 #include "ITimer.h"
+#include "IRelay.h"
 
 namespace controller {
 
@@ -36,7 +36,7 @@ class Controller : public timer::ITimerListener {
 public:
     enum class State : uint8_t { Idle, Heating, Fault };
 
-    Controller(heater::IHeater& relay, temp::ITemperature& sensor, const Config& config);
+    Controller(relay::IRelay& relay, temp::ITemperature& sensor, const Config& config);
 
     // timer::ITimerListener. Interrupt context: start one conversion, return.
     void onTick() override;
@@ -57,7 +57,7 @@ private:
     void decide(temp::Reading reading);
     void clampSetpoint();
 
-    heater::IHeater& relay_;
+    relay::IRelay& relay_;
     temp::ITemperature& sensor_;
     Config config_;
     temp::DeciCelsius temperature_;

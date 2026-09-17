@@ -1,5 +1,7 @@
 // Part 4 firmware: solar panel control. NTC on A0, Grove keys on D2–D4,
-// encoder on D6/D7 with SW on D12 (active low), servo PWM on D9.
+// encoder on D6/D7 with SW on D12 (active low), servo PWM on D9, pump relay
+// on D5 mirrored to the Uno LED on D13, setpoints in the first two EEPROM
+// bytes.
 //
 // Traces state changes over USART0 at 115200: keys, the encoder switch,
 // temperature, valve and pump, and saved setpoints.
@@ -17,7 +19,9 @@
 #include "key_hw.h"
 #include "lcd_hw.h"
 #include "led_hw.h"
+#include "relay_hw.h"
 #include "servo_hw.h"
+#include "settings_hw.h"
 #include "temp_hw.h"
 #include "timer_hw.h"
 #include "Twi.h"
@@ -68,16 +72,20 @@ int main() {
     encoder::EncoderHw encoder;
     servo::ServoHw valve;
     timer::TimerHw clock;
-    solar::Solar app(sensor, leds, numeric, keys, encoder, valve);
+    settings::SettingsHw store;
+    relay::RelayHw pump;
+    solar::Solar app(sensor, leds, numeric, keys, encoder, valve, store, pump);
     usart::UsartHw trace;
 
     trace.init();
-    print(trace, "\r\npart4 boot: ntc A0  keys D2-D4  enc D6/D7  sw D12  servo D9\r\n");
+    print(trace, "\r\npart4 boot: ntc A0  keys D2-D4  enc D6/D7  sw D12  servo D9  pump D5/D13\r\n");
 
     app.init();
     clock.init(&app);
 
-    print(trace, "drivers up  tlow=18 thigh=25\r\n");
+    // The setpoints now come out of EEPROM, so they are not known here. The
+    // loop below prints them on its first pass.
+    print(trace, "drivers up\r\n");
 
     sei();
     clock.start();

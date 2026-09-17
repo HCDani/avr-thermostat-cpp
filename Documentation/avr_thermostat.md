@@ -32,14 +32,17 @@ driver is an **abstract interface** with a hardware implementation, and the
   - state 1 → a **filled block** (custom CGRAM character 0, `█`), state 0 → space.
   - The HD44780 character ROM has no block glyph; the driver must program one
     into CGRAM at init (CGRAM holds 8 custom characters, 64×8 bits).
-- Position 8 in row 2 is a spare; positions 9–16 are free for extras
-  (see §6.6 backlight, optional).
+- Position 8 in row 2 is the sensor-fault indicator (§6.5); positions 9–16
+  are free.
 
 ---
 
 ## 1. Hardware Platform
 
 ### 1.1 Parts list
+
+The kit on hand is the **Starter Kit v3 Plus**, which is why the relay is
+already in the box; the column below is answered against that variant.
 
 | Qty | Module (Seeed Grove)                    | From Starter Kit v3? | Role |
 |-----|------------------------------------------|----------------------|------|
@@ -48,6 +51,7 @@ driver is an **abstract interface** with a hardware implementation, and the
 | 3   | Grove – Button                           | 1 in kit (buy 2 more)| Keys 1..3 |
 | 1   | Grove – Encoder **with push button**     | No (kit ships a rotary *angle* sensor instead) | Setpoint entry |
 | 1   | Grove Mini Servo                         | Yes                  | Valve |
+| 1   | Grove – Relay                            | Yes (Plus variant)   | Pump contactor (§6.3) |
 | 1   | Grove Base Shield 2.0                    | Yes                  | Interconnect |
 | 10  | Grove cables                             | Yes                  | Wiring |
 | 1   | Arduino Uno                                | — (own)              | MCU |
@@ -118,11 +122,23 @@ Arduino header.
 | Encoder A/B   | 5V   | GND | A                 | B                | D6, D7 (port D6)               |
 | Encoder SW    | —    | GND | — (separate wire) | —                | D12 (header, active low, internal pull-up) |
 | Mini Servo    | 5V   | GND | —                 | SIG (PWM)        | D9 (port D8 white; D8 unused)  |
+| Relay (pump)  | 5V   | GND | SIG               | —                | D5 (port D5 yellow; D6 unused by this module) |
 
 Power: all modules are 5 V logic. The LCD, encoder and buttons are I2C/digital
 only; the NTC drives an ADC input (A0). The Uno's 5 V pin supplies the
 modules; keep the servo powered from a stable 5 V source (the USB supply alone
 can sag under servo load), with GND common.
+
+Two notes on the relay's pin, both of which constrain the driver:
+
+- **D5 is `OC0B`**, Timer 0's compare-match-B output, and Timer 0 is the 1 Hz
+  tick in CTC mode (§2). The relay is an on/off actuator, so D5 is driven as a
+  plain GPIO output and the `COM0B` bits stay `00`; if they are ever set, the
+  timer takes the pin away from the driver.
+- **Port D5 and port D6 share the D6 line** (port D5's white is D6, port D6's
+  yellow is D6). The relay is a single-signal module and leaves its white pin
+  alone, so the encoder keeps D6 — but no two-signal module may ever go into
+  port D5 while the encoder is in port D6.
 
 ---
 
@@ -132,7 +148,8 @@ The solution is divided into **two levels**:
 
 1. **Driver level** — one driver per device, each in its own subfolder:
    `key/`, `led/` (LCD row 2), `display/` (LCD row 1), `temp/` (NTC),
-   `encoder/`, `servo/`, plus a thin `lcd/` layer used by `led` and `display`.
+   `encoder/`, `servo/`, `relay/` (pump contactor), `settings/` (persisted
+   setpoints), plus a thin `lcd/` layer used by `led` and `display`.
    Every driver is an **abstract C++ interface**; the hardware implementations
    live in the same folder (`..._hw`) and the **test mocks are plain
    implementations of the same interface** — the application never knows which
@@ -225,6 +242,32 @@ public:
     virtual ~ServoDriver() = default;
     virtual void init() = 0;
     virtual void setAngle(uint16_t angle) = 0;              /* 0..180 */
+};
+
+/* ---- relay driver (pump contactor, §6.3) ----
+   A binary actuator, nothing more. D5 is OC0B, so the implementation drives
+   the pin as GPIO and leaves COM0B at 00 (see §1.3). */
+class IRelay {
+public:
+    virtual ~IRelay() = default;
+    virtual void init() = 0;
+    virtual void set(bool on) = 0;
+    virtual bool get() const = 0;           /* last commanded state */
+};
+
+/* ---- settings driver (persisted setpoints, §6.4) ----
+   The only component allowed to touch EEPROM. Byte-level access and the
+   AVR header live in the hardware implementation; the application sees
+   nothing but this interface, so host tests run against a RAM-backed mock.
+   Whole degrees, not DeciCelsius: that is the unit the encoder edits in and
+   the unit that fits the two bytes of §6.4. */
+class ISettings {
+public:
+    virtual ~ISettings() = default;
+    virtual void init() = 0;
+    virtual uint8_t tlow() const = 0;
+    virtual uint8_t thigh() const = 0;
+    virtual void save(uint8_t tlow, uint8_t thigh) = 0;
 };
 ```
 
@@ -325,12 +368,18 @@ Design and implement a simplified **solar heating control system** using the
 Arduino Uno with the Grove modules.
 
 The device measures the **panel temperature** with the NTC sensor and controls
-a **valve (servo motor)** and a **pump (status indicator)**:
+a **valve (servo motor)** and a **pump (relay)**:
 
 - The servo opens/closes the district-heating circuit depending on the energy
   production from the sun.
-- The pump circulates the brine between the solar panel and the storage tank
-  (no real pump — the pump state is shown in row 2, position 7).
+- The pump circulates the brine between the solar panel and the storage tank.
+  The pump is switched by a **Grove Relay on D5** (§6.3), and its state is
+  **also** shown in row 2, position 7.
+
+Sections 6.3 to 6.5 extend the original assignment: the relay makes the pump a
+real actuator instead of an indicator, the setpoints survive a power cycle, and
+a failed sensor no longer leaves the loop running on a stale reading. Parts 1
+to 3 are unchanged.
 
 Behaviour:
 
@@ -339,8 +388,9 @@ Behaviour:
 - When the temperature rises **above thigh**: the valve must **close** and
   the pump must **start**.
 - Between tlow and thigh (hysteresis band): keep the current state.
-- The setpoints tlow and thigh are **configurable by the user** (initial
-  values tlow = 18 °C, thigh = 25 °C).
+- The setpoints tlow and thigh are **configurable by the user** and **persist
+  across a power cycle** (§6.4). The values tlow = 18 °C, thigh = 25 °C are
+  the defaults used when nothing valid is stored.
 
 Use the already implemented drivers: **keys (Grove buttons), status row
 (LCD row 2), numeric display (LCD row 1), NTC thermometer, encoder (with
@@ -375,16 +425,76 @@ When row 1 shows tlow or thigh:
 
 (While row 1 shows the current temperature the encoder has no effect.)
 
-### 6.3 Optional
+### 6.3 Pump relay (D5)
 
-- Return automatically to the current-temperature display **5 seconds**
-  after tlow or thigh have been shown/changed (use a timer tick).
-- Use the LCD **RGB backlight** to indicate the active mode (e.g. white =
-  temperature, blue = tlow, red = thigh).
+The pump output is a **Grove Relay on D5**, driven through `IRelay` (§2). It
+carries the same state that row-2 position 7 displays: the indicator and the
+relay are two views of one decision, never computed twice.
 
-### 6.4 Testing
+Requirements:
 
-(To be designed later — see §8.)
+1. The relay is commanded only from the application's main-loop pass, never
+   from an ISR.
+2. The relay is set to **off** during `init()`, before the first reading
+   arrives, so a reset cannot leave the pump energised on a stale command.
+3. The valve remains the servo on D9 and is unchanged by this section.
+
+### 6.4 Persisted setpoints (EEPROM)
+
+tlow and thigh survive a power cycle. All EEPROM access is behind `ISettings`
+(§2), so the application is unaware of the storage and the host tests run
+against a RAM-backed mock.
+
+Requirements:
+
+1. **Two bytes, whole degrees Celsius**: tlow at address 0, thigh at address 1.
+2. **Read once at `init()`**, then never again — the running values live in
+   RAM.
+3. **The pair rule** is a value within **0…60 °C** (the same range the encoder
+   enforces in §6.2) with tlow < thigh. It is checked on both sides of the
+   store, but the two sides answer a failure differently:
+   - **On read**, an unusable pair is replaced by the defaults tlow = 18 °C,
+     thigh = 25 °C, because the application has to start with something. A
+     blank EEPROM reads `0xFF`, so this is the normal path on a new board, not
+     an error case.
+   - **On save**, an unusable pair is **cancelled**: nothing is written and
+     nothing changes, exactly as the long press of §6.2 does. The stored pair
+     is already usable, so there is nothing to substitute and no reason to
+     spend an erase cycle. The application takes tlow and thigh back from the
+     store after saving rather than assuming its edit was kept.
+4. **Write only on the encoder's short-press commit** (§6.2). A long press
+   cancels and writes nothing. Never write per tick: a cell endures about
+   100,000 erase cycles, so a 1 Hz write would exhaust one in roughly a day.
+5. **Use `eeprom_update_byte`, not `eeprom_write_byte`**, so committing an
+   unchanged value costs no erase cycle.
+6. **Writes happen in main-loop context only.** A byte write blocks for
+   roughly 3.4 ms, which §7 forbids in an ISR.
+
+### 6.5 Sensor fault handling
+
+A reading whose status is not `Ok` (§2) is a broken sensor, not a temperature.
+Once the pump is a real actuator, ignoring that is a hazard rather than a
+cosmetic gap: a sensor that fails while the panel is hot leaves the pump off
+and the collector stagnating, and one that fails at night leaves the pump
+running and the store dumping heat into the panel.
+
+Requirements:
+
+1. A **single** bad reading is tolerated as noise: the valve and pump hold
+   their current state.
+2. After a **configurable number of consecutive** bad readings, the
+   application enters a **fault state**: the pump is switched **off** and the
+   valve is driven **open**, which is the safe resting position for the
+   district-heating circuit.
+3. The fault state **latches**: it is left only when a reading with status
+   `Ok` arrives, after which normal hysteresis resumes.
+4. The fault is **visible**: row 2 position 8 (§0) is on while the fault is
+   latched.
+
+*`lib/controller` already implements requirements 1 to 3 for a single-setpoint
+loop and is covered by 21 host tests. Its control law is setpoint ± hysteresis,
+where Part 4 uses two independent thresholds, so the two are not
+interchangeable — reuse the fault-counting behaviour, not the control law.*
 
 ---
 
@@ -396,7 +506,8 @@ When row 1 shows tlow or thigh:
 2. The temperature sensor driver must start **one conversion per 1 Hz tick**
    with an **ADC completion interrupt** (`ADIE`) — not continuous conversion.
    Design all ISRs to be **as short as possible** (no I2C, no arithmetic, no
-   blocking in ISRs).
+   blocking in ISRs). **No EEPROM access in an ISR either** — a byte write
+   blocks for roughly 3.4 ms (§6.4).
 3. Source code must be documented by **inline comments**, including author
    name(s) and date.
 4. Use **Test Driven Development** (see §8 for the test plan). Tests run on
@@ -412,14 +523,3 @@ When row 1 shows tlow or thigh:
 > left out of this revision; TDD remains a requirement, the concrete test
 > cases will be added in a separate document.)
 
-## 9. What to hand in
-
-1. **Class diagram** of the driver/application structure.
-2. **Sequence diagram** of the interaction between the solar control
-   application and the drivers.
-3. **Timing diagram** of one display-update cycle (timer tick → refresh →
-   I2C transfer). Use the wavedrom tool: https://wavedrom.com/
-4. **Activity diagram** of the display driver.
-5. **UML domain diagram** of the solar control application.
-6. All source files in a **zip archive or link to a GitHub repository**
-   (production code; the test project is added when the test plan lands).

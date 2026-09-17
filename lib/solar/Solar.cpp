@@ -4,8 +4,6 @@ namespace solar {
 
 namespace {
 
-const uint8_t kTlowInit = 18;
-const uint8_t kThighInit = 25;
 const uint8_t kDegreesMax = 60;
 
 const uint16_t kValveClosed = 0;
@@ -20,17 +18,22 @@ const uint8_t kLedPump = 7;
 }  // namespace
 
 Solar::Solar(temp::ITemperature& sensor, led::ILed& leds, display::IDisplay& display,
-             key::IKey& keys, encoder::IEncoder& encoder, servo::IServo& valve)
+             key::IKey& keys, encoder::IEncoder& encoder, servo::IServo& valve,
+             settings::ISettings& store, relay::IRelay& pump)
     : sensor_(sensor),
       leds_(leds),
       display_(display),
       keys_(keys),
       encoder_(encoder),
       valve_(valve),
+      store_(store),
+      pumpOut_(pump),
       temperature_(),
-      tlow_(kTlowInit),
-      thigh_(kThighInit),
-      edit_(kTlowInit),
+      // The defaults live in the store, not here: init() reloads these from it
+      // once the stored pair has been read.
+      tlow_(store.tlow()),
+      thigh_(store.thigh()),
+      edit_(store.tlow()),
       view_(View::Temperature),
       pump_(false),
       valveOpen_(true),
@@ -49,10 +52,17 @@ void Solar::init() {
     keys_.init();
     encoder_.init();
     valve_.init();
+    store_.init();
+    pumpOut_.init();
+
+    tlow_ = store_.tlow();
+    thigh_ = store_.thigh();
+    edit_ = tlow_;
 
     valve_.setAngle(kValveOpen);
     valveOpen_ = true;
     pump_ = false;
+    pumpOut_.set(false);
     view_ = View::Temperature;
     applyModeLeds();
     leds_.set(kLedValve, true);
@@ -137,6 +147,7 @@ void Solar::applyControl() {
     }
 
     valve_.setAngle(valveOpen_ ? kValveOpen : kValveClosed);
+    pumpOut_.set(pump_);
     leds_.set(kLedValve, valveOpen_);
     leds_.set(kLedPump, pump_);
 }
@@ -189,11 +200,17 @@ void Solar::onEncoderButton(bool down) {
     }
 
     if (!down && encoderDown_ && !longPress_) {
+        // Main-loop context, and only on the commit: the write blocks for
+        // milliseconds and spends one of the cell's finite erase cycles.
         if (view_ == View::Tlow) {
-            tlow_ = edit_;
+            store_.save(edit_, thigh_);
         } else {
-            thigh_ = edit_;
+            store_.save(tlow_, edit_);
         }
+        // The store cancels a pair it cannot hold, so it is the authority on
+        // what was kept rather than the edit that was offered.
+        tlow_ = store_.tlow();
+        thigh_ = store_.thigh();
         enter(View::Temperature);
     }
 }

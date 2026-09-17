@@ -5,21 +5,21 @@
 A closed-loop thermostat for an ATmega328P (Arduino Uno), written in C++14
 directly against the registers with no framework underneath. A thermistor is
 sampled through the ADC, the reading drives a hysteresis controller, and the
-controller switches a relay.
+controller switches its output through the `IRelay` interface.
 
-Hardware is a Grove Starter Kit v3: NTC on A0, relay as the heater output,
-encoder for the setpoint, buttons, RGB LCD, and a servo in the longer-term
-spec. `Documentation/avr_thermostat.md` is that goal, not a description of
-what already runs.
+Hardware is a Grove Starter Kit v3: NTC on A0, relay as the pump output,
+encoder for the setpoint, buttons, RGB LCD and a servo.
+`Documentation/avr_thermostat.md` is the goal, not a description of what
+already runs.
 
 ## Why C++ on a part with 2 KB of SRAM
 
 Not for the language's sake. Each of these earns its place:
 
 - **Every driver is an abstract interface, and the test mocks implement the
-  same interface.** `Controller` holds an `ITemperature&` and an `IHeater&`,
+  same interface.** `Controller` holds an `ITemperature&` and an `IRelay&`,
   so the identical control logic runs against registers on the target and
-  against mocks on the host with no `#ifdef` in it. That costs a vtable per
+  against mocks on the host, and contains no `#ifdef`. That costs a vtable per
   interface plus the `operator delete` stub in `src/cxx_runtime.cpp` that a
   virtual destructor drags in on a part with no C++ runtime.
 - **`DeciCelsius` is a distinct type.** A raw ADC count cannot be compared
@@ -43,13 +43,21 @@ accept.
 The thermistor sits in a divider, so both ADC rails are electrically
 meaningless: 0 claims infinite resistance, 1023 claims zero. Counts outside
 24..992 (the window where the sensor is specified, −40 to 125 °C) are a
-broken sensor rather than a temperature: open lead vs short. A single bad
-sample is tolerated as noise; several consecutive ones cut the heater and
-latch a fault. A setpoint restored from a blank or corrupted EEPROM is
-clamped into range before it is ever acted on.
+broken sensor rather than a temperature: below the window is an open lead,
+above it a short. A single bad sample is tolerated as noise; enough
+consecutive ones cut the relay and latch a fault.
 
-`temp::convert()` is the one place that mapping happens. Host tests exercise
-it; the ISRs never do.
+The setpoints live in the first two EEPROM bytes, and the pair has to be
+within 0..60 °C with tlow below thigh. Both sides of the store check that, and
+they answer a failure differently. A read substitutes the defaults 18 and 25,
+because the application has to start somewhere and a blank cell reads `0xFF`,
+which is what a new board gives rather than an error. A save cancels: nothing
+written, nothing changed, the same outcome as the encoder's long press. The
+stored pair was already usable, so there is nothing to substitute and no
+reason to spend one of the cell's finite erase cycles.
+
+`temp::convert()` is the one place where that mapping happens. Host tests
+exercise it; the ISRs never do.
 
 ## Layout
 
@@ -70,8 +78,9 @@ lib/temp/         ITemperature.h          driver interface
 lib/timer/        ITimer.h                1 Hz system tick
                   timer_hw.h .cpp         Timer 0, CTC, /1024, divide by 125
                   mock_timer.h .cpp       ticks on demand
-lib/heater/       IHeater.h               relay interface
-                  mock_heater.h .cpp      test mock (no GPIO driver yet)
+lib/relay/        IRelay.h                relay interface
+                  mock_relay.h .cpp       test mock
+                  relay_hw.h .cpp         GPIO driver for relay
 lib/usart/        IUsart.h                polled TX
                   usart_hw.h .cpp         USART0, 115200 8N1
                   usart_c.h               C API for Unity
@@ -95,6 +104,10 @@ lib/encoder/      IEncoder.h              D6/D7 quadrature, D12 SW active low
 lib/servo/        IServo.h                0..180 deg
                   servo_hw.h .cpp         Timer 1 OC1A D9, 50 Hz
                   mock_servo.h .cpp       test mock
+lib/settings/     ISettings.h             persisted setpoints, whole degrees
+                  Sanitize.h .cpp         the pair rule: read substitutes, save cancels
+                  settings_hw.h .cpp      EEPROM bytes 0 and 1; update, not write
+                  mock_settings.h .cpp    RAM store, counts erase cycles
 lib/controller/   Controller.h .cpp       hysteresis; onTick vs service
 lib/logic/        Demo.h .cpp             Part 1.3 key states then AND/OR/XOR/NAND/NOR/XNOR
 lib/thermo/       Thermometer.h .cpp      Part 2+3: bar 21–28 C
@@ -144,7 +157,7 @@ table and the tests cannot drift apart silently. `ThermistorTable.h` and
 
 ## Continuous integration
 
-Every push and pull request runs two jobs:
+Every push to `main` and every pull request runs two jobs:
 
 - the host test suites, and
 - a check that regenerating the lookup table produces no diff, so the table
@@ -158,12 +171,14 @@ are local checks.
 `Documentation/avr_thermostat.md` is the target; this is how far it has got.
 
 Done and covered by host tests: conversion (`convert()` plus the generated
-table), the hysteresis controller, the temperature, timer, heater and USART
+table), the hysteresis controller, the temperature, timer, relay and USART
 interfaces with their mocks, and Part 1 (LCD status row, Grove keys, logic
 demo). The interrupt-driven ADC, the 1 Hz Timer 0 tick, USART0 and a blocking
 TWI master are written. Firmware currently runs Part 4: panel temperature
 with tlow/thigh hysteresis, servo valve on D9, pump on row-2 position 7,
-keys for TEMP/TLOW/THIGH, encoder on D6/D7, switch on D12 (active low).
+keys for TEMP/TLOW/THIGH, encoder on D6/D7, switch on D12 (active low), and
+setpoints in EEPROM through `ISettings` — written only on the encoder's
+short-press commit, never per tick.
 
 Timers are allocated for the whole design. Timer 1 is the servo: hardware PWM
 on `OC1A` (D9, white of Grove port D8). The encoder is D6/D7, switch on D12.

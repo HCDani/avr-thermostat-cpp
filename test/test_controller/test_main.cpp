@@ -5,14 +5,14 @@
 #endif
 
 #include "Controller.h"
-#include "mock_heater.h"
 #include "mock_temp.h"
 #include "mock_timer.h"
+#include "mock_relay.h"
 
 using controller::Config;
 using controller::Controller;
 using controller::SetpointLimits;
-using heater::MockHeater;
+using relay::MockRelay;
 using temp::MockTemperature;
 using temp::DeciCelsius;
 using timer::MockTimer;
@@ -49,7 +49,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 static void starts_idle_with_the_heater_off(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -59,7 +59,7 @@ static void starts_idle_with_the_heater_off(void) {
 }
 
 static void heats_when_below_the_lower_bound(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -75,7 +75,7 @@ static void heats_when_below_the_lower_bound(void) {
 // specification forbids. The sample is latched on the tick and converted only
 // when the main loop reads it.
 static void the_tick_latches_and_the_main_loop_decides(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -106,7 +106,7 @@ static void the_tick_latches_and_the_main_loop_decides(void) {
 // Servicing without a tick must be free, or the main loop would re-decide on
 // a stale sample on every pass.
 static void service_without_a_tick_does_nothing(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -123,7 +123,7 @@ static void service_without_a_tick_does_nothing(void) {
 // available() is the only consumer of the latch flag. Reading the raw count
 // must not clear it, or inspecting a sample would lose the conversion.
 static void available_clears_and_readRaw_does_not(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -141,7 +141,7 @@ static void available_clears_and_readRaw_does_not(void) {
 // The point of hysteresis: once heating, a reading inside the band leaves the
 // relay alone. A controller that switched here would chatter around setpoint.
 static void keeps_heating_inside_the_band(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -156,7 +156,7 @@ static void keeps_heating_inside_the_band(void) {
 }
 
 static void stops_heating_above_the_upper_bound(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -171,7 +171,7 @@ static void stops_heating_above_the_upper_bound(void) {
 }
 
 static void stays_idle_inside_the_band(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -185,7 +185,7 @@ static void stays_idle_inside_the_band(void) {
 
 // A single dropout is noise and must not cut the heat.
 static void tolerates_fewer_bad_samples_than_the_limit(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -201,7 +201,7 @@ static void tolerates_fewer_bad_samples_than_the_limit(void) {
 }
 
 static void faults_and_cuts_the_heater_after_the_limit(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -219,7 +219,7 @@ static void faults_and_cuts_the_heater_after_the_limit(void) {
 }
 
 static void stays_off_while_faulted(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -233,7 +233,7 @@ static void stays_off_while_faulted(void) {
 }
 
 static void recovers_once_the_sensor_reads_again(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -253,7 +253,7 @@ static void recovers_once_the_sensor_reads_again(void) {
 // The bad-sample counter has to reset, or a dropout every other tick would
 // eventually fault a perfectly healthy sensor.
 static void intermittent_dropouts_never_reach_the_limit(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -269,7 +269,7 @@ static void intermittent_dropouts_never_reach_the_limit(void) {
 
 // The high rail is a shorted thermistor, and must fault just like an open one.
 static void the_high_rail_also_faults(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -283,7 +283,7 @@ static void the_high_rail_also_faults(void) {
 }
 
 static void setpoint_is_clamped_to_its_limits(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -299,7 +299,7 @@ static void setpoint_is_clamped_to_its_limits(void) {
 
 // A setpoint restored from a blank or corrupted EEPROM must not be acted on.
 static void construction_clamps_an_out_of_range_setpoint(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Config cfg = config();
     cfg.setpoint = DeciCelsius(32767);
@@ -310,7 +310,7 @@ static void construction_clamps_an_out_of_range_setpoint(void) {
 
 // The application must work through the interface, not a concrete driver.
 static void controller_drives_the_sensor_through_the_interface(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     Controller unit(relay, sensor, config());
 
@@ -327,7 +327,7 @@ static void controller_drives_the_sensor_through_the_interface(void) {
 // Sampling has to be periodic, and the 1 Hz tick is what makes it so. Wired
 // through the interfaces, one tick is one conversion.
 static void a_timer_tick_samples_and_decides(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     MockTimer clock;
     Controller unit(relay, sensor, config());
@@ -347,7 +347,7 @@ static void a_timer_tick_samples_and_decides(void) {
 // Three ticks of an open circuit must reach the fault limit, which proves the
 // bad-sample counter is driven by ticks and not by anything else.
 static void repeated_ticks_on_a_dead_sensor_fault(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     MockTimer clock;
     Controller unit(relay, sensor, config());
@@ -369,7 +369,7 @@ static void repeated_ticks_on_a_dead_sensor_fault(void) {
 // Ticks the main loop never got to must not pile up into a backlog of
 // decisions, or a slow loop would fault a healthy sensor in one pass.
 static void unserviced_ticks_coalesce(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     MockTimer clock;
     Controller unit(relay, sensor, config());
@@ -389,7 +389,7 @@ static void unserviced_ticks_coalesce(void) {
 // A stopped tick must not sample. Without this, stop() could silently do
 // nothing and the heater would keep being driven from stale readings.
 static void a_stopped_timer_never_samples(void) {
-    MockHeater relay;
+    MockRelay relay;
     MockTemperature sensor;
     MockTimer clock;
     Controller unit(relay, sensor, config());

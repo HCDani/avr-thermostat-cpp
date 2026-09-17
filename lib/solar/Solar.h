@@ -4,7 +4,9 @@
 #include "IEncoder.h"
 #include "IKey.h"
 #include "ILed.h"
+#include "IRelay.h"
 #include "IServo.h"
+#include "ISettings.h"
 #include "ITemperature.h"
 #include "ITimer.h"
 #include "DeciCelsius.h"
@@ -13,11 +15,13 @@ namespace solar {
 
 // Part 4: panel temperature drives a valve (servo) and a pump (row-2 pos 7)
 // with hysteresis between tlow and thigh. Keys select TEMP / TLOW / THIGH
-// on row 1; the encoder edits a setpoint while that view is showing.
+// on row 1; the encoder edits a setpoint while that view is showing, and a
+// short press commits it through ISettings so it survives a power cycle.
 class Solar : public timer::ITimerListener {
 public:
     Solar(temp::ITemperature& sensor, led::ILed& leds, display::IDisplay& display,
-          key::IKey& keys, encoder::IEncoder& encoder, servo::IServo& valve);
+          key::IKey& keys, encoder::IEncoder& encoder, servo::IServo& valve,
+          settings::ISettings& store, relay::IRelay& pump);
 
     void init();
     void onTick() override;
@@ -45,6 +49,8 @@ private:
     key::IKey& keys_;
     encoder::IEncoder& encoder_;
     servo::IServo& valve_;
+    settings::ISettings& store_;
+    relay::IRelay& pumpOut_;
 
     temp::DeciCelsius temperature_;
     uint8_t tlow_;
